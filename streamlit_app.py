@@ -133,6 +133,8 @@ if __name__ == '__main__':
   if submitted:
     # Interface with your existing class
     data = (contact_number, email, github, linkedin)
+    with open(username+'html','w')as file:
+      file.write(data)
   cv = cvmaster()
   # summary = (cv.summarise(input("Describe your professional profile :")))
   # education,projects,experience,achievements={},{},{},{}
