@@ -2,6 +2,8 @@ import streamlit as st
 from mistralai import Mistral
 from markdown import markdown
 import os
+import base64
+import requests
 
 # ----------------- LLM Setup ----------------- #
 rules = """You are an instruction-following assistant. Only do exactly what the user explicitly requests..."""
@@ -15,6 +17,36 @@ def llm(prompt):
             stream=False
         )
     return res.choices[0].message.content
+
+
+# ----------------- GitHub Upload ----------------- #
+def upload_to_github(file_path, repo, branch, token, commit_message, folder="resumes"):
+    # Save the file into the specific folder
+    file_name = f"{folder}/{os.path.basename(file_path)}"
+    
+    with open(file_path, "rb") as f:
+        content = f.read()
+
+    url = f"https://api.github.com/repos/{repo}/contents/{file_name}"
+    headers = {"Authorization": f"token {token}"}
+
+    # Check if file exists in repo
+    r = requests.get(url, headers=headers)
+    if r.status_code == 200:
+        sha = r.json()["sha"]
+    else:
+        sha = None
+
+    data = {
+        "message": commit_message,
+        "content": base64.b64encode(content).decode("utf-8"),
+        "branch": branch
+    }
+    if sha:
+        data["sha"] = sha
+
+    response = requests.put(url, headers=headers, json=data)
+    return response.json()
 
 
 # ----------------- HTML Templates ----------------- #
@@ -153,6 +185,7 @@ if submitted:
     summary = cv.summarise(summary_input) if auto_summary else summary_input
     data = (contact_number, email, github, linkedin)
 
+    file_path = username + ".html"
     cv.finalize(
         username=username,
         name=name,
@@ -165,4 +198,22 @@ if submitted:
         experience=st.session_state.experience,
     )
 
-    st.success(f"Resume for {name} generated as {username}.html")
+    # Upload to GitHub (in "resumes" folder)
+    repo = st.secrets["GITHUB_REPO"]        # e.g. "username/reponame"
+    branch = st.secrets.get("GITHUB_BRANCH", "main")
+    token = st.secrets["GITHUB_TOKEN"]
+
+    response = upload_to_github(
+        file_path=file_path,
+        repo=repo,
+        branch=branch,
+        token=token,
+        commit_message=f"Add resume for {name}",
+        folder="resumes"  # File will be saved in the "resumes" folder
+    )
+
+    if "content" in response:
+        st.success(f"Resume for {name} saved as {file_path} and uploaded to GitHub ✅")
+        st.markdown(f"[View on GitHub]({response['content']['html_url']})")
+    else:
+        st.error(f"Failed to upload to GitHub: {response}")
